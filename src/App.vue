@@ -1,5 +1,25 @@
 <template>
   <div id="app">
+    <hsc-window-style-white class="window-container">
+        <hsc-window
+          title="Models"
+          :resizable="true"
+          :isScrollable="true"
+          :minWidth="260"
+          :minHeight="300"
+          :maxWidth="400"
+          :maxHeight="500"
+          :closeButton="true"
+          :isOpen.sync="windows.models"
+          positionHint="-40 / 20"
+          >
+          <div class="row no-gutters p-2">
+            <div v-for="m in models" class="col-4">
+              <button @click="createModel(m.id)" class="btn btn-light border w-100">{{m.id}}</button>
+            </div>
+          </div>
+        </hsc-window>
+    </hsc-window-style-white>
    <split-pane @resize="resize" :min-percent='20' :default-percent='20' split="vertical">
       <template slot="paneL">
         <div style="position:relative">
@@ -18,7 +38,7 @@
               <button class="dropdown-item" @click="addObject('Circle')">Circle</button>
               <button class="dropdown-item" @click="addObject('Plane')">Plane</button>
             </div>
-            <button type="button" class="btn btn-light border mr-1"><i class="mdi mdi-file-plus"></i></button>
+            <button @click="windows.models = !windows.models" type="button" class="btn btn-light border mr-1"><i class="mdi mdi-file-plus"></i></button>
             <button type="button" class="btn btn-light border"><i class="mdi mdi-brush"></i></button>
           </div>
         </div>
@@ -33,10 +53,10 @@
                   <button @click="selectObject(o,true)" class="bg-light border-0 w-100 text-left">
                   <i v-if="o.active" class="mdi mdi-circle text-primary small mr-1"></i>
                   <i v-else class="mdi mdi-circle-outline text-secondary small mr-1"></i>
-                  <span>{{o.name}}</span>
+                  <span>{{o.children[0].name}}</span>
                   </button>
                 </div>
-                <div class="col-2 border-left">
+                <div class="col-2 bg-light border-left">
                   <div v-if="o.active">
                     <button type="button" class="bg-light border-0 w-100 dropdown-toggle" data-toggle="dropdown">
                       <i class="mdi mdi-settings"></i>
@@ -115,17 +135,22 @@
         ></div>
       </template>
     </split-pane>
+
   </div>
 </template>
 
 <script>
+import Vue from 'vue'
 import * as THREE from 'three';
 global.THREE = require('three')
+
 const OrbitControls = require('three-orbit-controls')(THREE)
 const TransformControls = require('three-transform-ctrls')
 const WindowResize = require('three-window-resize')
 const Sky = require('three-sky');
 const Terrain = require('three.terrain.js')
+
+import { makeBounds, makeTerrain, makeModel } from './assets/js/helpers.js';
 
 export default {
   data () {
@@ -140,7 +165,7 @@ export default {
       gridHelper: new THREE.GridHelper(40, 40),
       axesHelper: new THREE.AxesHelper(5),
       player: {
-        mesh: new THREE.Mesh(new THREE.BoxGeometry( 0.25, 0.25, 0.25 ),
+        mesh: new THREE.Mesh(new THREE.BoxGeometry( 0.2, 0.2, 0.2 ),
               new THREE.MeshPhongMaterial({ color: 'dodgerblue' })),
         keys: {
             up: false,
@@ -173,13 +198,20 @@ export default {
         }]
       },
       sky: null,
-      terrain: null,
       objects: [],
+      models: [{
+        id: 'tree1'
+      },{
+        id: 'bush1'
+      }],
       intersects: null,
       intersected: null,
       create: {
         active: false,
         object: null
+      },
+      windows: {
+        models: false
       }
     }
   },
@@ -200,6 +232,30 @@ export default {
     })
     window.addEventListener('keyup', function(e) {
         that.keyswitch(e, false)
+    })
+    // Single Key Press
+    window.addEventListener('keypress', function(e) {
+      console.log(e.keyCode)
+        if (e.keyCode == 99) { // C
+          that.objects.forEach(function (o) {
+            if (o.active) {
+              let mode = o.children[0].controls.getMode();
+              switch (mode) {
+                case 'translate':
+                  o.children[0].controls.setMode('scale')
+                  break;
+                case 'scale':
+                  o.children[0].controls.setMode('rotate')
+                  break;
+                case 'rotate':
+                  o.children[0].controls.setMode('translate')
+                  break;
+                default:
+                  break;
+              }
+            }
+          })
+        }
     })
     window.addEventListener('resize', function(event){
       that.resize()
@@ -234,118 +290,51 @@ export default {
       this.axesHelper.position.set(-0.5,-0.49,-0.5)
       this.scene.add(this.gridHelper,this.axesHelper)
       this.scene.add(this.player.mesh)
-      this.player.mesh.position.set(0,1,0)
+      this.player.mesh.position.set(0,-0.5,0)
       this.player.mesh.rotation.y = Math.PI * 1.5
 
-      // Floor
-      const floor = new THREE.Mesh(new THREE.BoxGeometry( 10, 0.5, 10 ), new THREE.MeshPhongMaterial( { color: '#999999' } ))
-      floor.position.set(-0.5,-0.8,-0.5)
-
-      
-      
-
-
-      //this.scene.add(floor)
-
-      // Terrain
-      this.makeTerrain()
+      makeTerrain(this.scene) // Create terrain
+      let worldBounds = makeBounds() // Create mountains
+      this.scene.add(worldBounds)
+      worldBounds.position.y = -1;
 
       // World Objects
       this.world.o.forEach(function (ob,i) {
         let obj = that.createObject(ob);
         that.objects.push(obj)
-        that.scene.add(that.objects[i].bounds,that.objects[i].controls,that.objects[i])
+        that.scene.add(that.objects[i].children[0].bounds,that.objects[i].children[0].controls,that.objects[i])
       })
-
-
-
-    },
-    makeTerrain () {
-      let texture = new THREE.TextureLoader().load(require('./assets/img/grass1.jpg'))
-      this.terrain = THREE.Terrain({
-          easing: THREE.Terrain.EaseIn,
-          frequency: 4,
-          heightmap: THREE.Terrain.DiamondSquare,
-          material: new THREE.MeshPhongMaterial({map: texture}),
-          maxHeight: 1,
-          minHeight: -1,
-          steps: 1,
-          useBufferGeometry: false,
-          xSegments: 40,
-          xSize: 40,
-          ySegments: 40,
-          ySize: 40,
-      });
-      this.scene.add(this.terrain);
-
-      let worldBounds = makeBounds();
-      this.scene.add(worldBounds)
-      worldBounds.position.y = -1;
-
-      function makeBounds () {
-        let container = new THREE.Object3D()
-        let rowA = buildArenaRow({
-          container : container,
-          radius    : 21,
-          nClusters : 30,
-          nPerCluster : 5,
-          heightMin : 4,
-          heightMax : 10,
-          radiusBottomMin : 2,
-          radiusBottomMax : 3.5,
-        })
-        let rowB = buildArenaRow({
-          container : container,
-          radius    : 20,
-          nClusters : 20,
-          nPerCluster : 2,
-          heightMin : 2,
-          heightMax : 6,
-          radiusBottomMin : 1.5,
-          radiusBottomMax : 2.5,
-        })
-        return container;
-      }
-
-      function buildArenaRow(opts){
-        opts      = opts  || {}
-        var container   = opts.container  || console.assert(false, 'This arguments is required')
-        var radius    = opts.radius !== undefined   ? opts.radius   : 10/20
-        var nClusters   = opts.nCluster !== undefined   ? opts.nClusters  : 30
-        var nPerCluster   = opts.nPerCluster !== undefined  ? opts.nPerCluster  : 5
-        var heightMin   = opts.heightMin !== undefined    ? opts.heightMin  : 2/20
-        var heightMax   = opts.heightMax !== undefined    ? opts.heightMax  : 3/20
-        var radiusBottomMin = opts.radiusBottomMin !== undefined  ? opts.radiusBottomMin  : 0.8/20
-        var radiusBottomMax = opts.radiusBottomMax !== undefined  ? opts.radiusBottomMax  : 0.8/20
-        
-        var material    = new THREE.MeshPhongMaterial({color: '#553615'})
-        for(var i = 0; i < nClusters; i++ ){
-          var angle = (i / nClusters) * (Math.PI*2);
-          for(var j = 0; j < nPerCluster; j++){
-            var deltaAngle  = THREE.Math.randFloatSpread(2/nClusters) * (Math.PI*2);
-            var height  = THREE.Math.randFloat( heightMin, heightMax );
-            var radiusBottom= THREE.Math.randFloat( radiusBottomMin, radiusBottomMax );
-            var geometry  = new THREE.CylinderBufferGeometry(0, radiusBottom, height)
-            var mesh  = new THREE.Mesh(geometry, material)
-            mesh.position.y = height/2
-            mesh.position.x = opts.radius * Math.cos(angle + deltaAngle)
-            mesh.position.z = opts.radius * Math.sin(angle + deltaAngle)
-            opts.container.add(mesh)
-          }
-        }
-        return opts.container;
-      }
 
     },
     update () {
       let that = this;
       this.controls()
       this.player.ray.setFromCamera(this.player.mouse, this.camera);
-      this.intersects = this.player.ray.intersectObjects(this.objects, false);
-      if (this.intersects.length > 0) {
-        if (that.intersects[0].object != that.intersected) {
-          that.intersected = that.intersects[0].object;
+
+      let targets = []
+
+      this.objects.forEach(function (o) {
+        if (o.children[0].type == 'Mesh') {
+          targets.push(o.children[0])
+        } else if (o.children[0].type == 'Group') {
+          o.children[0].children.forEach(function(c) {
+            targets.push(c)
+          })
         }
+      })
+
+      this.intersects = this.player.ray.intersectObjects(targets, false);
+      if (this.intersects.length > 0) {
+        if (that.intersects[0].object.parent.type == 'Object3D') {
+          if (that.intersects[0].object.parent != that.intersected) {
+            that.intersected = that.intersects[0].object.parent;
+          }
+        } else if (that.intersects[0].object.parent.type == 'Group') {
+          if (that.intersects[0].object.parent.parent != that.intersected) {
+            that.intersected = that.intersects[0].object.parent.parent;
+          }
+        }
+
       } 
       else {
         that.intersected = null;
@@ -353,13 +342,25 @@ export default {
 
       this.objects.forEach(function (o) {
         if (o.active) {
-          o.bounds.visible = true;
-          o.controls.visible = true;
-          o.controls.enabled = true;
+          if (o.children[0].type == 'Mesh') {
+            o.children[0].bounds.visible = true;
+            o.children[0].controls.visible = true;
+            o.children[0].controls.enabled = true;
+          } else if (o.children[0].type == 'Group') {
+            //o.children[0].children[0].bounds.visible = true;
+            o.children[0].controls.visible = true;
+            o.children[0].controls.enabled = true;
+          }
         } else {
-          o.bounds.visible = false;
-          o.controls.visible = false;
-          o.controls.enabled = false;
+          if (o.children[0].type == 'Mesh') {
+            o.children[0].bounds.visible = false;
+            o.children[0].controls.visible = false;
+            o.children[0].controls.enabled = false;
+          } else if (o.children[0].type == 'Group') {
+            //o.children[0].children[0].bounds.visible = false;
+            o.children[0].controls.visible = false;
+            o.children[0].controls.enabled = false;
+          }
         }
       })
 
@@ -389,7 +390,7 @@ export default {
 
       if (mesh.position.y <= -0.35) { mesh.position.y = -0.35 }
 
-      let relativeCameraOffset = new THREE.Vector3(-2,1,0);
+      let relativeCameraOffset = new THREE.Vector3(-1.5,0.75,0);
       let cameraOffset = relativeCameraOffset.applyMatrix4(mesh.matrixWorld);
       this.camera.position.x = cameraOffset.x;
       this.camera.position.y = cameraOffset.y;
@@ -414,7 +415,9 @@ export default {
       this.player.mouse.x = ((event.clientX - rect.left) / this.$refs.render.offsetWidth) * 2 - 1;
       this.player.mouse.y = -((event.clientY - rect.top) / this.$refs.render.offsetHeight) * 2 + 1;
       this.objects.forEach(function (o) {
-        o.bounds.update()
+        if (o.children[0].type == 'Mesh') {
+          o.children[0].bounds.update()
+        }
       })
 
       // Adding object
@@ -466,7 +469,12 @@ export default {
               break;
       }
     },
+    createModel (m) {
+      this.deselectAll()
+      makeModel(this.scene,m,this.camera, this.renderer.domElement,this.objects)
+    },
     createObject (o) {
+        let object = new THREE.Object3D();
         let mesh;
         switch (o.g) {
           case 'Box':
@@ -510,12 +518,12 @@ export default {
             break;
         }
         mesh.name = o.name;
-        mesh.active = false;
         mesh.position.set(o.position[0],o.position[1],o.position[2])
 
         let bounds = new THREE.BoxHelper(mesh, 0xffff00);
         bounds.visible = false;
         mesh.bounds = bounds;
+        // try setting object bounds to mesh bounds
 
         let controls = new TransformControls(this.camera, this.renderer.domElement);
         controls.attach(mesh)
@@ -524,36 +532,35 @@ export default {
         controls.setTranslationSnap(1);
         mesh.controls = controls;
 
-        /*controls.addEventListener('objectChange', (e) => {
-          console.log(e)
-        });*/
-
-        return mesh;
+        object.add(mesh)
+        return object;
     },
     selectObject (o,fromPanel) {
+      console.log(o)
       if (fromPanel) {
         if (o.active) {
           this.deselectAll()
         } else {
           this.deselectAll()
-          o.active = true;
+          Vue.set( o, 'active', true)
         }
       } else {
         this.deselectAll()
-        o.active = true;
+        Vue.set( o, 'active', true)
       }
     },
     deselectAll () {
       this.objects.forEach(function (o) {
-        o.active = false;
+        Vue.set( o, 'active', false)
       })
     },
     addObject (g) {
       let o;
+      let rnd = Math.random().toString(36).substring(8);
       switch (g) {
         case 'Box':
           o = {
-            name: 'Box_'+Math.random().toString(36).substring(8),
+            name: 'Box_'+rnd,
             size: [1,1,1],
             position: [0,0,0],
             color: 'lightgray',
@@ -562,7 +569,7 @@ export default {
           break;
         case 'Sphere':
           o = {
-            name: 'Sphere_'+Math.random().toString(36).substring(8),
+            name: 'Sphere_'+rnd,
             size: [1,32,32],
             position: [0,0,0],
             color: 'lightgray',
@@ -571,7 +578,7 @@ export default {
           break;
         case 'Cylinder':
           o = {
-            name: 'Cylinder_'+Math.random().toString(36).substring(8),
+            name: 'Cylinder_'+rnd,
             size: [0.5,0.5,1,32],
             position: [0,0,0],
             color: 'lightgray',
@@ -580,7 +587,7 @@ export default {
           break;
         case 'Cone':
           o = {
-            name: 'Cone_'+Math.random().toString(36).substring(8),
+            name: 'Cone_'+rnd,
             size: [0.5,1,32],
             position: [0,0,0],
             color: 'lightgray',
@@ -589,7 +596,7 @@ export default {
           break;
         case 'Circle':
           o = {
-            name: 'Circle_'+Math.random().toString(36).substring(8),
+            name: 'Circle_'+rnd,
             size: [0.5,32],
             position: [0,0,0],
             color: 'lightgray',
@@ -598,7 +605,7 @@ export default {
           break;
         case 'Plane':
           o = {
-            name: 'Plane_'+Math.random().toString(36).substring(8),
+            name: 'Plane_'+rnd,
             size: [1,1,1],
             position: [0,0,0],
             color: 'lightgray',
@@ -614,7 +621,7 @@ export default {
       this.objects.push(obj)
 
       let ob = this.objects[this.objects.length - 1];
-      this.scene.add(ob.bounds,ob.controls,ob)
+      this.scene.add(ob.children[0].bounds,ob.children[0].controls,ob)
       this.selectObject(ob)
 
       // Set object to mouse controls temporarily
@@ -628,8 +635,8 @@ export default {
       this.objects.forEach(function (obj,i) {
         if (o == obj) {
           that.objects.splice(i,1)
-          o.controls.detach(o)
-          that.scene.remove(o.controls,o.bounds,o)
+          o.children[0].controls.detach(o.children[0])
+          that.scene.remove(o.children[0].controls,o.children[0].bounds,o.children[0],o)
 
         }
       })

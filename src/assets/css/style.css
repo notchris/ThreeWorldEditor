@@ -21,6 +21,20 @@ html, body, #app {
 	height: 100%;
 }
 
+.window-container {
+  position:absolute;
+  top:0;
+  left:0;
+  z-index:9999;
+}
+
+.window {
+  background:#EEE !important;
+}
+.titlebar {
+  background:#CCC !important;
+}
+
 button {
   cursor: pointer;
   outline: none !important;

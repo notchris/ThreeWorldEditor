@@ -7,12 +7,14 @@
     "build": "vue-cli-service build"
   },
   "dependencies": {
+    "@hscmap/vue-window": "^2.2.7",
     "bootstrap": "^4.2.1",
     "jquery": "^3.3.1",
     "popper.js": "^1.14.6",
     "raycaster-contains": "^1.0.3",
     "three": "^0.99.0",
     "three-dragcontrols": "^0.88.2",
+    "three-obj-mtl-loader": "^1.0.3",
     "three-orbit-controls": "^82.1.0",
     "three-sky": "^1.1.0",
     "three-transform-controls": "^1.0.4",
